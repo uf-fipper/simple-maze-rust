@@ -19,34 +19,34 @@ use crate::{
     // long_about = "long about",
     multicall = true
 )]
-enum Cli {
-    #[command(aliases = ["w", "W"], help_template = "move up")]
+pub enum Cli {
+    #[command(visible_aliases = ["w", "W"], about = "move up")]
     Up,
-    #[command(aliases = ["s", "S"], help_template = "move down")]
+    #[command(visible_aliases = ["s", "S"], about = "move down")]
     Down,
-    #[command(aliases = ["a", "A"], help_template = "move left")]
+    #[command(visible_aliases = ["a", "A"], about = "move left")]
     Left,
-    #[command(aliases = ["d", "D"], help_template = "move right")]
+    #[command(visible_aliases = ["d", "D"], about = "move right")]
     Right,
-    #[command(aliases = ["r"], help_template = "restart the game")]
+    #[command(visible_aliases = ["r"], about = "restart the game")]
     Restart,
-    #[command(help_template = "new game")]
+    #[command(about = "new game")]
     New(SubcommandNew),
-    #[command(help_template = "solve the game")]
+    #[command(about = "solve the game")]
     Solve,
-    #[command(help_template = "unsolve the game")]
+    #[command(visible_aliases = ["unsolve"], about = "unsolve the game")]
     UnSolve,
-    #[command(help_template = "quit the game")]
+    #[command(about = "quit the game")]
     Quit,
-    #[command(aliases = ["disp"], help_template = "display")]
+    #[command(visible_aliases = ["disp"], about = "display")]
     Display,
 }
 
 #[derive(Debug, Parser)]
-struct SubcommandNew {
-    row: i32,
-    column: i32,
-    seed: Option<u64>,
+pub struct SubcommandNew {
+    pub row: i32,
+    pub column: i32,
+    pub seed: Option<u64>,
 }
 
 enum RunOnceResult {
