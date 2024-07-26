@@ -1,0 +1,11 @@
+#[cfg(feature = "console")]
+pub mod console_game;
+pub mod errors;
+pub mod game;
+pub mod game_value;
+pub mod map_value;
+pub mod maze_map;
+pub mod move_status;
+pub mod player;
+pub mod point;
+pub mod random;
