@@ -183,6 +183,9 @@ where
     }
 
     pub fn solve(&self, pos: Point) -> MazeResult<Vec<Point>> {
+        if pos == self.ed {
+            return Ok(vec![pos]);
+        }
         let mut queue = VecDeque::new();
         let mut map_temp = vec![vec![None; self.column()]; self.row()];
         let mut p = pos;

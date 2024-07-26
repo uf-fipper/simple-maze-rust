@@ -13,10 +13,10 @@ impl Display for MazeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Init(value) => write!(f, "{}", value),
-            Self::QueueEmpty => write!(f, "队列为空"),
-            Self::SolveException => write!(f, "求解失败"),
-            Self::GameWin => write!(f, "游戏已结束"),
-            Self::CanNotMove => write!(f, "不能这么移动"),
+            Self::QueueEmpty => write!(f, "queue empty"),
+            Self::SolveException => write!(f, "solve failed"),
+            Self::GameWin => write!(f, "game is over"),
+            Self::CanNotMove => write!(f, "can not move"),
         }
     }
 }

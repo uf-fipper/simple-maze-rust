@@ -1,5 +1,5 @@
 use clap::Parser;
-use rand::{rngs::ThreadRng, Rng, SeedableRng};
+use rand::{thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
 use crate::{
@@ -13,11 +13,11 @@ use crate::{
 
 #[derive(Debug, Parser)]
 #[command(
-    version = "v0.1.24",
-    author = "author",
-    about = "about",
-    long_about = "long about",
-    multicall = true // 加上这行可以不用带可执行文件名称参数
+    version = "v0.1.0",
+    // author = "author",
+    about = "maze command",
+    // long_about = "long about",
+    multicall = true
 )]
 enum Cli {
     #[command(aliases = ["w", "W"], help_template = "move up")]
@@ -38,13 +38,15 @@ enum Cli {
     UnSolve,
     #[command(help_template = "quit the game")]
     Quit,
+    #[command(aliases = ["disp"], help_template = "display")]
+    Display,
 }
 
 #[derive(Debug, Parser)]
 struct SubcommandNew {
     row: i32,
     column: i32,
-    seed: Option<String>,
+    seed: Option<u64>,
 }
 
 enum RunOnceResult {
@@ -54,10 +56,11 @@ enum RunOnceResult {
     Quit,
     Error(String),
     CmdError(String),
+    Display,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct ConsoleGame<R = ThreadRng>
+pub struct ConsoleGame<R = ChaCha8Rng>
 where
     R: Rng,
 {
@@ -70,9 +73,13 @@ where
     move_list: Option<Vec<Point>>,
 }
 
-impl ConsoleGame<ThreadRng> {
+impl ConsoleGame<ChaCha8Rng> {
     pub fn new(row: i32, column: i32) -> MazeResult<Self> {
-        let map = MazeMap::new(row, column)?;
+        let random = match ChaCha8Rng::from_rng(thread_rng()) {
+            Ok(r) => r,
+            Err(e) => return Err(MazeError::Init(e.to_string())),
+        };
+        let map = MazeMap::new_with_random(row, column, random)?;
         let player = Player::new(map.st, "player");
         Ok(Self {
             map,
@@ -88,7 +95,7 @@ impl ConsoleGame<ThreadRng> {
 
 impl<R> ConsoleGame<R>
 where
-    R: Rng,
+    R: Rng + SeedableRng,
 {
     fn new_value_map() -> GameValueMap<String> {
         GameValueMap {
@@ -160,36 +167,51 @@ where
 
 impl<R> Game<R, String> for ConsoleGame<R>
 where
-    R: Rng,
+    R: Rng + SeedableRng,
 {
     fn display(&self) -> MazeResult<()> {
-        let mut res_list: Vec<Vec<&str>> = self
+        let player_name_str = format!("player name: {}", self.player.name);
+        let step_str = format!("step: {}", self.player.step);
+        let move_times_str = format!("move times: {}", self.player.move_times);
+        let mut res_list = vec![
+            vec![&player_name_str],
+            vec![&step_str],
+            vec![&move_times_str],
+        ];
+        let mut map_list: Vec<Vec<&String>> = self
             .map
             .map
             .iter()
-            .map(|line| {
-                line.iter()
-                    .map(|value| value.to(&self.value_map).as_str())
-                    .collect()
-            })
+            .map(|line| line.iter().map(|value| value.to(&self.value_map)).collect())
             .collect();
         // solve
-        if let Some(solve_list) = &self.solve_list {
-            for p in solve_list.iter() {
-                res_list[*p] = self.value_map.solve.as_str();
-            }
+        let solve_list;
+        if self.will_solve {
+            solve_list = self.solve(self.player.pos)?;
+        } else {
+            solve_list = vec![];
+        }
+        for p in solve_list {
+            map_list[p] = &self.value_map.solve;
         }
         // move
         if let Some(move_list) = &self.move_list {
             for p in move_list.iter() {
-                res_list[*p] = self.value_map.r#move.as_str();
+                map_list[*p] = &self.value_map.r#move;
             }
         }
         // player
-        res_list[self.player.pos] = self.value_map.player.as_str();
+        map_list[self.player.pos] = &self.value_map.player;
+
+        res_list.extend(map_list);
         let res_string = res_list
             .iter()
-            .map(|line| line.join(""))
+            .map(|line| {
+                line.iter()
+                    .map(|&s| s.as_str())
+                    .collect::<Vec<&str>>()
+                    .join("")
+            })
             .collect::<Vec<String>>()
             .join("\n");
         println!("{}", res_string);
@@ -220,17 +242,24 @@ where
         self.display().unwrap();
         loop {
             let mut buf = String::new();
-            std::io::stdin().read_line(&mut buf).unwrap();
+            std::io::stdin().read_line(&mut buf).unwrap_or_else(|e| {
+                println!("{}", e.to_string());
+                0
+            });
             self.move_list = None;
             match self.run_once(buf.trim()) {
-                RunOnceResult::Ok => {}
+                RunOnceResult::Ok => self
+                    .display()
+                    .unwrap_or_else(|e| println!("{}", e.to_string())),
                 RunOnceResult::InValid => println!("invalid input"),
                 RunOnceResult::CanNotMove => println!("can not move"),
                 RunOnceResult::Quit => break,
                 RunOnceResult::Error(err) => println!("error: {}", err),
                 RunOnceResult::CmdError(err) => println!("{}", err),
+                RunOnceResult::Display => self
+                    .display()
+                    .unwrap_or_else(|e| println!("{}", e.to_string())),
             }
-            self.display().unwrap();
         }
         Ok(())
     }
@@ -239,7 +268,7 @@ where
 // run
 impl<R> ConsoleGame<R>
 where
-    R: Rng,
+    R: Rng + SeedableRng,
 {
     fn inner_move(&mut self, status: MoveStatus) -> RunOnceResult {
         match self.move_to(status) {
@@ -251,16 +280,6 @@ where
                 MazeError::CanNotMove => RunOnceResult::CanNotMove,
                 other => RunOnceResult::Error(other.to_string()),
             },
-        }
-    }
-
-    fn inner_solve(&mut self) -> RunOnceResult {
-        match self.solve(self.player.pos) {
-            Ok(solve_list) => {
-                self.solve_list = Some(solve_list);
-                RunOnceResult::Ok
-            }
-            Err(err) => RunOnceResult::Error(err.to_string()),
         }
     }
 
@@ -283,63 +302,46 @@ where
                 return RunOnceResult::Ok;
             }
             Cli::New(sub) => {
-                if let Some(str) = sub.seed {
-                    let seed = &mut Self::to_seed(str.as_str());
-                    self.map.random.fill(seed);
+                if let Some(state) = sub.seed {
+                    match self.new_game_with_random(sub.row, sub.column, R::seed_from_u64(state)) {
+                        Ok(_) => {}
+                        Err(e) => return RunOnceResult::Error(e.to_string()),
+                    };
                 }
-                match self.new_game(sub.row, sub.column) {
-                    Ok(_) => {}
-                    Err(e) => return RunOnceResult::Error(e.to_string()),
-                };
             }
             Cli::Solve => self.will_solve = true,
             Cli::UnSolve => self.will_solve = false,
             Cli::Quit => return RunOnceResult::Quit,
+            Cli::Display => return RunOnceResult::Display,
         };
-        if self.will_solve {
-            return self.inner_solve();
-        } else {
-            self.solve_list = None;
-            RunOnceResult::Ok
-        }
-    }
-
-    fn to_seed(raw: &str) -> <ChaCha8Rng as SeedableRng>::Seed {
-        let u8array: &[u8] = raw.as_bytes();
-        let mut seed: <ChaCha8Rng as SeedableRng>::Seed;
-        if u8array.len() >= 32 {
-            seed = u8array[0..32].try_into().unwrap();
-        } else {
-            seed = [0; 32];
-            seed[..u8array.len()].clone_from_slice(u8array);
-        }
-        seed
+        RunOnceResult::Ok
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use rand::{thread_rng, SeedableRng};
+    use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
     use super::*;
 
     #[test]
     fn test_run() {
-        let u8array: &[u8] = "aosndfjewnjqkerkjwqnerijwerneafqwefqqweffe".as_bytes();
-        let mut seed: <ChaCha8Rng as SeedableRng>::Seed;
-        if u8array.len() >= 32 {
-            seed = u8array[0..32].try_into().unwrap();
-        } else {
-            seed = [0; 32];
-            seed[..u8array.len()].clone_from_slice(u8array);
-        }
+        let seed = 123;
         println!("{:?}", seed);
-        let mut random = thread_rng();
-        random.fill(&mut seed);
-        ConsoleGame::new_with_random(10, 20, random)
-            .unwrap()
-            .run()
-            .unwrap();
+        let random = ChaCha8Rng::seed_from_u64(seed);
+        let mut game = ConsoleGame::new_with_random(10, 20, random).unwrap();
+        assert!(!game.is_win().unwrap());
+        game.move_to(MoveStatus::Right).unwrap();
+        game.move_to(MoveStatus::Right).unwrap();
+        game.move_to(MoveStatus::Right).unwrap();
+        game.move_to(MoveStatus::Right).unwrap();
+        game.move_to(MoveStatus::Down).unwrap();
+        game.move_to(MoveStatus::Right).unwrap();
+        game.move_to(MoveStatus::Right).unwrap();
+        game.move_to(MoveStatus::Right).unwrap();
+        game.move_to(MoveStatus::Down).unwrap();
+        game.move_to(MoveStatus::Down).unwrap();
+        assert!(game.is_win().unwrap());
     }
 }
