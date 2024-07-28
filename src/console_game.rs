@@ -307,6 +307,11 @@ where
                         Ok(_) => {}
                         Err(e) => return RunOnceResult::Error(e.to_string()),
                     };
+                } else {
+                    match self.new_game(sub.row, sub.column) {
+                        Ok(_) => {}
+                        Err(e) => return RunOnceResult::Error(e.to_string()),
+                    }
                 }
             }
             Cli::Solve => self.will_solve = true,
